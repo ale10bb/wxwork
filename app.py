@@ -75,7 +75,25 @@ def push_rm(module):
                     elif event_key == 'RM_QUEUE':
                         r = requests.post('{}/api2/queue/list'.format(conf[module]['forward']), json={}).json()
                         assert not r['result'], r['err']
-                        reply_content = '==== 分配队列 ====\n\n' + '\n'.join(['· ' + row['name'] for row in r['data']['normal']])
+                        for idx, item in enumerate(r['data']['normal']):
+                            if from_user != item['id']:
+                                continue
+                            if item['status'] == -1:
+                                status = '(跳过1篇)'
+                            elif item['status'] == 0:
+                                status = '空闲'
+                            elif item['status'] == 1:
+                                status = '不审加急'
+                            elif item['status'] == 2:
+                                status = '不审报告'
+                            else:
+                                status = '未知'
+                            reply_content = '===== 状态通知 =====\n\n你的状态: {}\n你的分配顺位: {}{}{}'.format(
+                                status, 
+                                idx + 1 if item['status'] != -1 else 'x', 
+                                ' (+{}页)'.format(item['pages_diff']) if item['pages_diff'] else '',
+                                '\n你当前有{}个审核任务'.format(item['current']) if item['current'] else ''
+                            )
                     else:
                         pass
                 elif event == 'subscribe':
