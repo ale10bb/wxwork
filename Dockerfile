@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # set TZ to Asia/Shanghai by default
 ENV TZ=Asia/Shanghai
