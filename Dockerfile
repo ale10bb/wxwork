@@ -1,15 +1,12 @@
-FROM python:3.11-slim
+FROM registry.cn-hongkong.aliyuncs.com/ale10bb/python:3.11-web-flask
 
-# set TZ to Asia/Shanghai by default
-ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+# requirements for wxwork
+RUN pip install --no-cache-dir pycryptodome
 
-# environments for RM
+# directory structure for wxwork
 WORKDIR /wxwork
+COPY weworkapi_callback weworkapi_callback
+COPY app.py .
+
 ENTRYPOINT ["gunicorn", "app:app"]
 CMD [ "--worker-class", "gevent", "--capture-output", "--bind", ":9080" ]
-
-# requirements for RM
-RUN pip install --no-cache-dir Flask requests pycryptodome gunicorn[gevent]
-COPY app.py app.py
-COPY weworkapi_callback weworkapi_callback
