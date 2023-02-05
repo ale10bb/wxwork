@@ -1,4 +1,4 @@
-FROM registry.cn-hongkong.aliyuncs.com/ale10bb/python:3.11-web-flask
+FROM registry.cn-shanghai.aliyuncs.com/ale10bb/python:3.11-web-flask
 
 # requirements for wxwork
 RUN pip install --no-cache-dir pycryptodome
