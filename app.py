@@ -78,45 +78,57 @@ def handle_rm():
                 case 'click':
                     # 处理“菜单事件”
                     event_key = xml_tree.find("EventKey").text
+                    token = requests.get('{}/utils/genToken?user_id={}'.format(shm['rm']['forward'], user)).text
                     match event_key:
                         case 'RM_KNOCK':
                             app.logger.info('{}: event/click/RM_KNOCK'.format(user))
-                            requests.post('{}/api/mail'.format(shm['rm']['forward']), json={})
+                            requests.post(
+                                '{}/api/mail'.format(shm['rm']['forward']),
+                                headers={'Authorization': 'Bearer {}'.format(token)}, 
+                                json={},
+                            )
                             reply_content = '[打机器人]已加入处理队列'
                         case 'RM_QUEUE':
                             app.logger.info('{}: event/click/RM_QUEUE'.format(user))
-                            r = requests.post('{}/api2/queue/list'.format(shm['rm']['forward']), json={}).json()
+                            r = requests.post(
+                                '{}/api/user/info'.format(shm['rm']['forward']),
+                                headers={'Authorization': 'Bearer {}'.format(token)},
+                                json={}
+                            ).json()
                             assert not r['result'], r['err']
-                            for idx, item in enumerate(r['data']['queue']):
-                                if user != item['id']:
-                                    continue
-                                if item['status'] == 0:
-                                    status = '空闲'
-                                elif item['status'] == 1:
-                                    status = '不审加急'
-                                elif item['status'] == 2:
-                                    status = '不审报告'
-                                else:
-                                    status = '未知'
-                                reply_content = '===== 状态通知 =====\n\n你的状态: {}{}\n你的分配顺位: {}{}{}'.format(
-                                    status, 
-                                    '（跳过一篇）' if item['skipped'] == 1 else '',
-                                    idx + 1, 
-                                    ' (+{}页)'.format(item['pages_diff']) if item['pages_diff'] else '',
-                                    '\n你当前有{}个审核任务'.format(item['current']) if item['current'] else ''
-                                )
+                            ret = r['data']['user']
+                            if ret['status'] == 0:
+                                status = '空闲'
+                            elif ret['status'] == 1:
+                                status = '不审加急'
+                            elif ret['status'] == 2:
+                                status = '不审报告'
+                            else:
+                                status = '未知'
+                            reply_content = '===== 状态通知 =====\n\n你的状态: {}{}\n你的分配顺位: {}{}{}'.format(
+                                status, 
+                                '（跳过一篇）' if ret['skipped'] == 1 else '',
+                                ret['priority'], 
+                                ' (+{}页)'.format(ret['pages_diff']) if ret['pages_diff'] else '',
+                                '\n你当前有{}个审核任务'.format(ret['current']) if ret['current'] else ''
+                            )
                         case _:
                             app.logger.debug('{}: (unhandled) event/click/{}'.format(user, event_key))
                 case 'subscribe':
                     app.logger.info('{}: event/subscribe'.format(user))
-                    r = requests.post('{}/api2/user/search'.format(shm['rm']['forward']), json={'id': user}).json()
-                    assert not r['result'], r['err']
-                    if r['data']['user']:
-                        ret = r['data']['user'][0]
+                    token = requests.get('{}/utils/genToken?user_id={}'.format(shm['rm']['forward'], user)).text
+                    r = requests.post(
+                        '{}/api/user/info'.format(shm['rm']['forward']),
+                        headers={'Authorization': 'Bearer {}'.format(token)},
+                        json={}
+                    ).json()
+                    if r['result']:
+                        reply_content = '通知：启用\n用户：{}（无用户信息）'.format(user)
+                    else:
+                        ret = r['data']['user']
                         is_reviewer = '是' if ret['role'] else '否'
                         reply_content = '通知：启用\n用户：{}\n审核人：{}'.format(ret['name'], is_reviewer)
-                    else:
-                        reply_content = '通知：启用\n用户：{}（无用户信息）'.format(user)
+                        
                 case 'view':
                     # 跳过打开网页的事件
                     app.logger.info('{}: event/view -> {}'.format(user, xml_tree.find("EventKey").text))
