@@ -29,7 +29,7 @@ def before_request():
         ipaddress.ip_address(g.client_ip)
     except ValueError as err:
         abort(400, err)
-    app.logger.debug('%s - %s %s ', g.client_ip, request.method, request.path)
+    app.logger.info('%s - %s %s ', g.client_ip, request.method, request.path)
 
 
 @app.route('/push/<module>')
@@ -210,9 +210,9 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
         json={}
     ).json()
     if r['result']:
-        reply_content = f"[审核队列] 请求失败\nerr: {r['err']}"
+        reply_content = f"- [审核队列] -\n\n请求失败: {r['err']}"
         return reply_content
-    reply_content = f"[审核队列] 下一顺位: {r['data']['queue'][0]['name']}"
+    reply_content = f"- [审核队列] -\n\n下一顺位: {r['data']['queue'][0]['name']}"
 
     for idx, reviewer in enumerate(r['data']['queue']):
         if reviewer['id'] == user_id:
@@ -224,7 +224,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
                 status = '不审报告'
             else:
                 status = '未知'
-            reply_content = '[审核队列]\n分配顺位: {}{}\n你的状态: {}{}\n当前任务: {}'.format(
+            reply_content += '\n你的顺位: {}{}\n你的状态: {}{}\n当前任务: {}'.format(
                 idx + 1,
                 f" (+{reviewer['pages_diff']}页)" if reviewer['pages_diff'] else '',
                 status,
