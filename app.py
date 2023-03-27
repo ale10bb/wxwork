@@ -18,7 +18,7 @@ def before_first_request():
     config.read(os.path.join('conf', 'wxwork.conf'), encoding='UTF-8')
     global shm
     shm = dict(config._sections)
-    app.logger.setLevel('INFO')
+    app.logger.setLevel('DEBUG')
 
 
 @app.before_request
