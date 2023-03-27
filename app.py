@@ -212,7 +212,9 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
     if r['result']:
         reply_content = f"- [审核队列] -\n\n请求失败: {r['err']}"
         return reply_content
-    reply_content = f"- [审核队列] -\n\n下一顺位: {r['data']['queue'][0]['name']}"
+    next_user_name = r['data']['queue'][0]['name'] \
+        if r['data']['queue'][0]['id'] != user_id else r['data']['queue'][1]['name']
+    reply_content = f"- [审核队列] -\n\n下一顺位: {next_user_name}"
 
     for idx, reviewer in enumerate(r['data']['queue']):
         if reviewer['id'] == user_id:
