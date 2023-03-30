@@ -227,7 +227,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
             else:
                 status = '未知'
             reply_content += '\n你的顺位: {}{}\n你的状态: {}{}\n当前任务: {}'.format(
-                idx + 1,
+                idx + 1 if reviewer['status'] != 2 else '-',
                 f" (+{reviewer['pages_diff']}页)" if reviewer['pages_diff'] else '',
                 status,
                 '（跳过一篇）' if reviewer['skipped'] == 1 else '',
