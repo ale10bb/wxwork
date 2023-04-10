@@ -216,7 +216,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
         if r['data']['queue'][0]['id'] != user_id else r['data']['queue'][1]['name']
     reply_content = f"- [审核队列] -\n\n下一顺位: {next_user_name}"
 
-    for idx, reviewer in enumerate(r['data']['queue']):
+    for reviewer in r['data']['queue']:
         if reviewer['id'] == user_id:
             if reviewer['status'] == 0:
                 status = '空闲'
@@ -227,7 +227,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
             else:
                 status = '未知'
             reply_content += '\n你的顺位: {}{}\n你的状态: {}{}\n当前任务: {}'.format(
-                idx + 1 if reviewer['status'] != 2 else '-',
+                reviewer['priority'] if reviewer['status'] != 2 else '-',
                 f" (+{reviewer['pages_diff']}页)" if reviewer['pages_diff'] else '',
                 status,
                 '（跳过一篇）' if reviewer['skipped'] == 1 else '',
