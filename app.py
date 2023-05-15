@@ -2,23 +2,19 @@
 # Flask程序及函数
 import ipaddress
 from flask import Flask, request, g, abort
+import os.path
+from configparser import ConfigParser
 import xml.etree.ElementTree as ET
 import requests
 from weworkapi_callback.WXBizMsgCrypt3 import WXBizMsgCrypt
 
 
 app = Flask(__name__)
-
-
-@app.before_first_request
-def before_first_request():
-    import os.path
-    from configparser import ConfigParser
-    config = ConfigParser()
-    config.read(os.path.join('conf', 'wxwork.conf'), encoding='UTF-8')
-    global shm
-    shm = dict(config._sections)
-    app.logger.setLevel('DEBUG')
+app.logger.setLevel('DEBUG')
+config = ConfigParser()
+config.read(os.path.join('conf', 'wxwork.conf'), encoding='UTF-8')
+shm = dict(config._sections)
+del config
 
 
 @app.before_request
@@ -258,3 +254,7 @@ def handle_subscribe(user_id: str, srcip: str) -> str:
             is_reviewer,
         )
     return reply_content
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
