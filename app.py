@@ -13,9 +13,7 @@ app = Flask(__name__)
 app.logger.setLevel('DEBUG')
 config = ConfigParser()
 config.read(os.path.join('conf', 'wxwork.conf'), encoding='UTF-8')
-shm = dict(config._sections)
-del config
-
+app.config['MODULES'] = config
 
 @app.before_request
 def before_request():
@@ -35,13 +33,13 @@ def verify_URL(module):
     https://developer.work.weixin.qq.com/document/path/90930#31-%E6%94%AF%E6%8C%81http-get%E8%AF%B7%E6%B1%82%E9%AA%8C%E8%AF%81url%E6%9C%89%E6%95%88%E6%80%A7
 
     '''
-    if module not in shm:
+    if module not in app.config['MODULES']:
         abort(400)
 
     wxcpt = WXBizMsgCrypt(
-        shm[module]['token'],
-        shm[module]['encodingaeskey'],
-        shm[module]['corpid'],
+        app.config['MODULES'][module]['token'],
+        app.config['MODULES'][module]['encodingaeskey'],
+        app.config['MODULES'][module]['corpid'],
     )
     ret, plain_echostr = wxcpt.VerifyURL(
         request.args['msg_signature'],
@@ -63,11 +61,11 @@ def handle_default(module):
     https://developer.work.weixin.qq.com/document/path/90930#32-%E6%94%AF%E6%8C%81http-post%E8%AF%B7%E6%B1%82%E6%8E%A5%E6%94%B6%E4%B8%9A%E5%8A%A1%E6%95%B0%E6%8D%AE
 
     '''
-    if module not in shm:
+    if module not in app.config['MODULES']:
         abort(400)
 
-    wxcpt = WXBizMsgCrypt(shm[module]['token'], shm[module]
-                          ['encodingaeskey'], shm[module]['corpid'])
+    wxcpt = WXBizMsgCrypt(app.config['MODULES'][module]['token'], app.config['MODULES'][module]
+                          ['encodingaeskey'], app.config['MODULES'][module]['corpid'])
     ret, plain_msg = wxcpt.DecryptMsg(
         request.data,
         request.args['msg_signature'],
@@ -83,7 +81,7 @@ def handle_default(module):
     ret, encrypted_msg = wxcpt.EncryptMsg(
         '<xml><ToUserName><![CDATA[{}]]></ToUserName><FromUserName><![CDATA[{}]]></FromUserName><CreateTime>{}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[{}]]></Content></xml>'.format(
             ET.fromstring(plain_msg).find("FromUserName").text,
-            shm[module]['corpid'],
+            app.config['MODULES'][module]['corpid'],
             request.args['timestamp'],
             f"no route for \"{module}\"\necho: {plain_msg}",
         ),
@@ -104,9 +102,9 @@ def handle_rm():
 
     '''
     wxcpt = WXBizMsgCrypt(
-        shm['rm']['token'],
-        shm['rm']['encodingaeskey'],
-        shm['rm']['corpid'],
+        app.config['MODULES']['rm']['token'],
+        app.config['MODULES']['rm']['encodingaeskey'],
+        app.config['MODULES']['rm']['corpid'],
     )
     ret, plain_msg = wxcpt.DecryptMsg(
         request.data,
@@ -160,7 +158,7 @@ def handle_rm():
     ret, encrypted_msg = wxcpt.EncryptMsg(
         '<xml><ToUserName><![CDATA[{}]]></ToUserName><FromUserName><![CDATA[{}]]></FromUserName><CreateTime>{}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[{}]]></Content></xml>'.format(
             g.user,
-            shm['rm']['corpid'],
+            app.config['MODULES']['rm']['corpid'],
             request.args['timestamp'],
             reply_content
         ),
@@ -176,10 +174,10 @@ def handle_rm():
 
 def handle_click_RM_KNOCK(user_id: str, srcip: str) -> str:
     token = requests.get(
-        f"{shm['rm']['forward']}/utils/genToken?user_id={user_id}"
+        f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
     r = requests.post(
-        f"{shm['rm']['forward']}/api/mail",
+        f"{app.config['MODULES']['rm']['forward']}/api/mail",
         headers={
             'Authorization': f"Bearer {token}",
             'X-Forwarded-For': srcip,
@@ -195,10 +193,10 @@ def handle_click_RM_KNOCK(user_id: str, srcip: str) -> str:
 
 def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
     token = requests.get(
-        f"{shm['rm']['forward']}/utils/genToken?user_id={user_id}"
+        f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
     r = requests.post(
-        f"{shm['rm']['forward']}/api/queue/list",
+        f"{app.config['MODULES']['rm']['forward']}/api/queue/list",
         headers={
             'Authorization': f"Bearer {token}",
             'X-Forwarded-For': srcip,
@@ -235,10 +233,10 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
 
 def handle_subscribe(user_id: str, srcip: str) -> str:
     token = requests.get(
-        f"{shm['rm']['forward']}/utils/genToken?user_id={user_id}"
+        f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
     r = requests.post(
-        f"{shm['rm']['forward']}/api/user/info",
+        f"{app.config['MODULES']['rm']['forward']}/api/user/info",
         headers={
             'Authorization': f"Bearer {token}",
             'X-Forwarded-For': srcip,
