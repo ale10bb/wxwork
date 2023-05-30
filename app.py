@@ -1,8 +1,7 @@
 # -*- coding: UTF-8 -*-
-# Flask程序及函数
-import ipaddress
-from flask import Flask, request, g, abort
+from flask import Flask, request, abort
 import os.path
+import datetime
 from configparser import ConfigParser
 import xml.etree.ElementTree as ET
 import requests
@@ -14,19 +13,78 @@ app.logger.setLevel('DEBUG')
 config = ConfigParser()
 config.read(os.path.join('conf', 'wxwork.conf'), encoding='UTF-8')
 app.config['MODULES'] = config
+cache = {}
+for section in app.config['MODULES']:
+    if section == 'DEFAULT':
+        continue
+    cache[section] = {
+        'access_token': '',
+        'expires_in': datetime.datetime.fromtimestamp(0),
+    }
 
-@app.before_request
-def before_request():
-    g.client_ip = request.headers['X-Forwarded-For'].split(',')[0] \
-        if 'X-Forwarded-For' in request.headers else request.remote_addr
+
+@app.post('/message/send/<module>')
+def send_text(module):
+    ''' 向列表中的用户发送text
+    
+    https://developer.work.weixin.qq.com/document/path/90236#%E6%96%87%E6%9C%AC%E6%B6%88%E6%81%AF
+
+    Args:
+        content: 通知内容
+        to: 发送对象的userid列表
+    '''
+    app.logger.debug('args: %s', {
+        'module': module, 'content': request.json['content'], 'to': request.json['to']
+    })
+    if module not in app.config['MODULES']:
+        abort(404)
+
     try:
-        ipaddress.ip_address(g.client_ip)
-    except ValueError as err:
-        abort(400, err)
-    app.logger.info('%s - %s %s ', g.client_ip, request.method, request.path)
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={get_access_token(module)}"
+        r = requests.post(url, json={
+            'touser': request.json['to'],
+            'msgtype': 'text',
+            'agentid': app.config['MODULES'][module]['agentid'],
+            'text': {'content': request.json['content']}
+        }).json()
+        app.logger.debug('message/send response: %s', r)
+        if r['errcode']:
+            app.logger.error('message/send error: %s', r['errmsg'])
+            return 500, r
+    except:
+        app.logger.error('message/send error', exc_info=True)
+        return 500, {}
+    return r
 
 
-@app.route('/push/<module>')
+def get_access_token(module):
+    ''' 检测access_token是否过期，并自动刷新
+    '''
+    global cache
+    if datetime.datetime.now() < cache[module]['expires_in']:
+        return cache[module]['access_token']
+    session = requests.session()
+    url = f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={app.config['MODULES'][module]['corpid']}&corpsecret={app.config['MODULES'][module]['secret']}"
+    for _ in range(3):
+        try:
+            r = session.get(url).json()
+            app.logger.debug('gettoken response: %s', r)
+            if r['errcode']:
+                app.logger.warning('gettoken error: %s', r['errmsg'])
+                continue
+            if cache[module]['access_token'] != r['access_token']:
+                cache[module]['access_token'] = r['access_token']
+                cache[module]['expires_in'] = datetime.datetime.now() + \
+                    datetime.timedelta(seconds=r['expires_in'] - 600)
+                app.logger.info('refreshed access_token')
+            return cache[module]['access_token']
+        except:
+            app.logger.warning('gettoken error', exc_info=True)
+    else:
+        raise RuntimeError('Cannot get access_token.')
+
+
+@app.get('/callback/<module>')
 def verify_URL(module):
     ''' 支持Http Get请求验证URL有效性
 
@@ -34,7 +92,7 @@ def verify_URL(module):
 
     '''
     if module not in app.config['MODULES']:
-        abort(400)
+        abort(404)
 
     wxcpt = WXBizMsgCrypt(
         app.config['MODULES'][module]['token'],
@@ -49,12 +107,12 @@ def verify_URL(module):
     )
     if ret:
         app.logger.error('ERR in VerifyURL: %s', ret)
-        abort(500)
+        abort(500, ret)
     app.logger.debug('plain_echostr: %s', plain_echostr)
     return plain_echostr
 
 
-@app.route('/push/<module>', methods=['POST'])
+@app.post('/callback/<module>')
 def handle_default(module):
     ''' 支持Http Post请求接收业务数据
 
@@ -62,10 +120,13 @@ def handle_default(module):
 
     '''
     if module not in app.config['MODULES']:
-        abort(400)
+        abort(404)
 
-    wxcpt = WXBizMsgCrypt(app.config['MODULES'][module]['token'], app.config['MODULES'][module]
-                          ['encodingaeskey'], app.config['MODULES'][module]['corpid'])
+    wxcpt = WXBizMsgCrypt(
+        app.config['MODULES'][module]['token'],
+        app.config['MODULES'][module]['encodingaeskey'],
+        app.config['MODULES'][module]['corpid'],
+    )
     ret, plain_msg = wxcpt.DecryptMsg(
         request.data,
         request.args['msg_signature'],
@@ -74,7 +135,7 @@ def handle_default(module):
     )
     if ret:
         app.logger.error('ERR in DecryptMsg: %s', ret)
-        abort(500)
+        abort(500, ret)
     app.logger.debug('plain_msg: %s', plain_msg)
 
     # 加密回复信息
@@ -90,11 +151,11 @@ def handle_default(module):
     )
     if ret:
         app.logger.error('ERR in EncryptMsg: %s', ret)
-        abort(500)
+        abort(500, ret)
     return encrypted_msg
 
 
-@app.route('/push/rm', methods=['POST'])
+@app.post('/callback/rm')
 def handle_rm():
     ''' 支持Http Post请求接收业务数据
 
@@ -114,13 +175,13 @@ def handle_rm():
     )
     if ret:
         app.logger.error('ERR in DecryptMsg: %s', ret)
-        abort(500)
+        abort(500, ret)
     app.logger.debug('plain_msg: %s', plain_msg)
 
     reply_content = ''
     xml_tree = ET.fromstring(plain_msg)
     msg_type = xml_tree.find("MsgType").text
-    g.user = xml_tree.find("FromUserName").text
+    from_user = xml_tree.find("FromUserName").text
 
     match msg_type:
         case 'event':
@@ -131,33 +192,31 @@ def handle_rm():
                     event_key = xml_tree.find("EventKey").text
                     match event_key:
                         case 'RM_KNOCK':
-                            app.logger.info('%s: event/click/RM_KNOCK', g.user)
-                            reply_content = handle_click_RM_KNOCK(
-                                g.user, g.client_ip)
+                            app.logger.info('%s: event/click/RM_KNOCK', from_user)
+                            reply_content = handle_click_RM_KNOCK(from_user)
                         case 'RM_QUEUE':
-                            app.logger.info('%s: event/click/RM_QUEUE', g.user)
-                            reply_content = handle_click_RM_QUEUE(
-                                g.user, g.client_ip)
+                            app.logger.info('%s: event/click/RM_QUEUE', from_user)
+                            reply_content = handle_click_RM_QUEUE(from_user)
                         case _:
                             app.logger.debug(
-                                '%s: (unhandled) event/click/%s', g.user, event_key)
+                                '%s: (unhandled) event/click/%s', from_user, event_key)
                 case 'subscribe':
-                    app.logger.info('{}: event/subscribe'.format(g.user))
-                    reply_content = handle_subscribe(g.user, g.client_ip)
+                    app.logger.info('%s: event/subscribe', from_user)
+                    reply_content = handle_subscribe(from_user)
                 case 'view':
                     # 打开网页事件
                     event_key = xml_tree.find("EventKey").text
-                    app.logger.info('%s: event/view -> %s', g.user, event_key)
+                    app.logger.info('%s: event/view -> %s', from_user, event_key)
                 case _:
-                    app.logger.debug('%s: (unhandled) event/%s', g.user, event)
+                    app.logger.debug('%s: (unhandled) event/%s', from_user, event)
         case _:
-            app.logger.debug('%s: (unhandled) %s', g.user, msg_type)
+            app.logger.debug('%s: (unhandled) %s', from_user, msg_type)
 
     # 加密回复信息
     app.logger.debug('reply_content: %s', reply_content)
     ret, encrypted_msg = wxcpt.EncryptMsg(
         '<xml><ToUserName><![CDATA[{}]]></ToUserName><FromUserName><![CDATA[{}]]></FromUserName><CreateTime>{}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[{}]]></Content></xml>'.format(
-            g.user,
+            from_user,
             app.config['MODULES']['rm']['corpid'],
             request.args['timestamp'],
             reply_content
@@ -167,12 +226,12 @@ def handle_rm():
     )
     if ret:
         app.logger.error('ERR in EncryptMsg: %s', ret)
-        abort(500)
+        abort(500, ret)
 
     return encrypted_msg
 
 
-def handle_click_RM_KNOCK(user_id: str, srcip: str) -> str:
+def handle_click_RM_KNOCK(user_id: str) -> str:
     token = requests.get(
         f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
@@ -180,7 +239,7 @@ def handle_click_RM_KNOCK(user_id: str, srcip: str) -> str:
         f"{app.config['MODULES']['rm']['forward']}/api/mail",
         headers={
             'Authorization': f"Bearer {token}",
-            'X-Forwarded-For': srcip,
+            'X-Forwarded-For': request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr),
         },
         json={},
     ).json()
@@ -191,7 +250,7 @@ def handle_click_RM_KNOCK(user_id: str, srcip: str) -> str:
     return reply_content
 
 
-def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
+def handle_click_RM_QUEUE(user_id: str) -> str:
     token = requests.get(
         f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
@@ -199,7 +258,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
         f"{app.config['MODULES']['rm']['forward']}/api/queue/list",
         headers={
             'Authorization': f"Bearer {token}",
-            'X-Forwarded-For': srcip,
+            'X-Forwarded-For': request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr),
         },
         json={}
     ).json()
@@ -231,7 +290,7 @@ def handle_click_RM_QUEUE(user_id: str, srcip: str) -> str:
     return reply_content
 
 
-def handle_subscribe(user_id: str, srcip: str) -> str:
+def handle_subscribe(user_id: str) -> str:
     token = requests.get(
         f"{app.config['MODULES']['rm']['forward']}/utils/genToken?user_id={user_id}"
     ).text
@@ -239,7 +298,7 @@ def handle_subscribe(user_id: str, srcip: str) -> str:
         f"{app.config['MODULES']['rm']['forward']}/api/user/info",
         headers={
             'Authorization': f"Bearer {token}",
-            'X-Forwarded-For': srcip,
+            'X-Forwarded-For': request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr),
         },
         json={}
     ).json()
