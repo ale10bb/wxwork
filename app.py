@@ -33,8 +33,9 @@ def send_text(module):
         content: 通知内容
         to: 发送对象的userid列表
     '''
+    parsed_data = request.get_json(force=True)
     app.logger.debug('args: %s', {
-        'module': module, 'content': request.json['content'], 'to': request.json['to']
+        'module': module, 'content': parsed_data['content'], 'to': parsed_data['to']
     })
     if module not in app.config['MODULES']:
         abort(404)
@@ -42,10 +43,10 @@ def send_text(module):
     try:
         url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={get_access_token(module)}"
         r = requests.post(url, json={
-            'touser': request.json['to'],
+            'touser': parsed_data['to'],
             'msgtype': 'text',
             'agentid': app.config['MODULES'][module]['agentid'],
-            'text': {'content': request.json['content']}
+            'text': {'content': parsed_data['content']}
         }).json()
         app.logger.debug('message/send response: %s', r)
         if r['errcode']:
